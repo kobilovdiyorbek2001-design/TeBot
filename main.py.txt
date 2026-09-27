@@ -1,0 +1,69 @@
+import asyncio
+import logging
+import sys
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode, ChatType
+from aiogram.types import Message
+from google import genai
+from google.genai import types
+
+# --- SOZLAMALAR ---
+# BotFather'dan olingan token va Google AI Studio'dan olingan Gemini API kalitingizni kiriting
+TELEGRAM_BOT_TOKEN = "SIZNING_TELEGRAM_BOT_TOKENINGIZ"
+GEMINI_API_KEY = "SIZNING_GEMINI_API_KEYINGIZ"
+
+# Gemini klienti
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Bot va Dispetcher
+dp = Dispatcher()
+
+# Botning xulq-atvori va muloqot uslubi (Faqat "siz" va insoniy yondashuv)
+SYSTEM_INSTRUCTION = (
+    "Siz samimiy, aqlli va muloyim insoniy yordamchisiz. "
+    "Foydalanuvchilarga doimo hurmat bilan, 'siz' ohangida, iliq va tushunarli javob bering. "
+    "Hech qachon 'sen' deb murojaat qilmang. O'zbek tilida ravon, tabiiy va xushmuomala gapiring. "
+    "Javoblaringiz aniq va mavzuga mos bo'lsin."
+)
+
+# Faqat SHAXSIY CHAT (Lichka) dan kelgan matnli xabarlarni ushlab qolish
+@dp.message(F.chat.type == ChatType.PRIVATE, F.text)
+async def handle_private_message(message: Message):
+    # Bot o'zining yoki boshqa botlarning xabarlariga javob bermasligi uchun tekshiruv
+    if message.from_user.is_bot:
+        return
+
+    # Foydalanuvchiga "yozmoqda..." holatini ko'rsatish
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    
+    user_text = message.text
+    
+    try:
+        # Gemini orqali tabiiy insoniy javob generatsiya qilish
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=user_text,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.7,
+            ),
+        )
+        bot_reply = response.text
+    except Exception as e:
+        logging.error(f"Xatolik yuz berdi: {e}")
+        bot_reply = "Kechirasiz, hozirgi paytda javob berishda kichik texnik nosozlik kuzatildi. Iltimos, ozroq vaqt o'tib qayta urinib ko'ring."
+
+    # Javobni shaxsiy chatga yuborish
+    await message.answer(bot_reply)
+
+async def main():
+    bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    print("Avto-otvetchik bot muvaffaqiyatli ishga tushdi va shaxsiy xabarlarni kutmoqda...")
+    
+    # Polling orqali ishga tushirish
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    asyncio.run(main())
